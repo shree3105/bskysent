@@ -30,7 +30,7 @@ services:
   dashboard:
     build: 
       context: ./bsky-sentiment
-      dockerfile: Dockerfile
+      dockerfile: dashboard/Dockerfile
     restart: always
     ports:
       - "8000:8000"
