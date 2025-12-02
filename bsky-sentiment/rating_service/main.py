@@ -16,7 +16,7 @@ load_dotenv(os.path.join(os.path.dirname(__file__), '../ingestion/.env'))
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GROQ_MODEL = "qwen-2.5-32b" # Groq ID for Qwen 2.5 32B
+GROQ_MODEL = "qwen/qwen3-32b" # User requested model
 
 if not GROQ_API_KEY:
     logger.warning("GROQ_API_KEY not found! Service will fail to rate topics.")
