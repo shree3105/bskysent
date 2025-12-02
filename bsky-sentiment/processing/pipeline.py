@@ -277,6 +277,12 @@ class Pipeline:
                             llama_candidates_summaries.append(summaries[i])
                     
                     # 3. Run Llama for Ambiguous Cases
+                    # OPTIMIZATION: If we already have a Safe Accept (True), we don't need to check Ambiguous ones.
+                    # A Safe Accept (Score > 9.0) is a definitive match, better than any "Maybe".
+                    if True in final_decisions:
+                        logger.info("  ✨ Safe Accept found! Skipping Llama verification for ambiguous cases.")
+                        llama_candidates_summaries = [] # Clear list to skip Llama
+                    
                     if llama_candidates_summaries:
                         logger.info(f"  🦙 Calling Llama 70B for {len(llama_candidates_summaries)} items...")
                         llama_results = self.models.verify_match_llama_batch(full_text, llama_candidates_summaries)
