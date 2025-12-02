@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  ingestion:
+    build: 
+      context: ./bsky-sentiment
+      dockerfile: Dockerfile
+    restart: always
+    environment:
+      # Connects to the shared DB via the host gateway or specific network
+      DATABASE_URL: ${DATABASE_URL}
+      BSKY_USERNAME: ${BSKY_USERNAME}
+      BSKY_PASSWORD: ${BSKY_PASSWORD}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: ["python", "ingestion/main.py"]
+
+  processing:
+    build: 
+      context: ./bsky-sentiment
+      dockerfile: Dockerfile
+    restart: always
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      CEREBRAS_API_KEY: ${CEREBRAS_API_KEY}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: ["python", "processing/pipeline.py"]
+
+  dashboard:
+    build: 
+      context: ./bsky-sentiment
+      dockerfile: Dockerfile
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./dashboard:/app/dashboard
+    command: ["uvicorn", "dashboard.server:app", "--host", "0.0.0.0", "--port", "8000"]
+
+  adminer:
+    image: adminer
+    restart: always
+    ports:
+      - "8080:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

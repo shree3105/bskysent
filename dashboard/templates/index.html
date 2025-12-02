@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Sentiment Terminal</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="module">
+        import autoAnimate from 'https://cdn.jsdelivr.net/npm/@formkit/auto-animate@1.0.0/index.min.js'
+        window.autoAnimate = autoAnimate
+    </script>
+    <style>
+        body {
+            background-color: #0d1117;
+            color: #c9d1d9;
+            font-family: 'Courier New', Courier, monospace;
+        }
+
+        .glow {
+            text-shadow: 0 0 10px rgba(52, 211, 153, 0.5);
+        }
+
+        @keyframes flash {
+            0% {
+                background-color: rgba(52, 211, 153, 0.3);
+            }
+
+            100% {
+                background-color: transparent;
+            }
+        }
+
+        .flash-update {
+            animation: flash 1s ease-out;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #0d1117;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #374151;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #4b5563;
+        }
+    </style>
+</head>
+
+<body class="p-8 h-screen flex flex-col items-center">
+
+    <div class="w-full max-w-6xl">
+        <header class="flex justify-between items-center mb-8 border-b border-gray-700 pb-4">
+            <h1 class="text-3xl font-bold text-green-400 glow">>> LIVE_TOPICS_MONITOR</h1>
+            <div class="flex items-center gap-6">
+                <div class="flex items-center gap-2 text-xs font-mono text-gray-500">
+                    <span>PROCESSED UP TO:</span>
+                    <span id="system-status" class="text-blue-400 font-bold">Initializing...</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="w-3 h-3 bg-green-500 rounded-full animate-pulse"></span>
+                    <span class="text-sm text-gray-400">ONLINE</span>
+                </div>
+            </div>
+        </header>
+
+        <div class="flex flex-col gap-8 mb-8 w-full">
+
+            <!-- Latest Updates (Live Feed) -->
+            <div class="flex flex-col mb-8">
+                <h2 class="text-xl font-bold text-yellow-400 mb-4 glow">>> LATEST_UPDATES (LIVE)</h2>
+                <div class="bg-gray-900 rounded-lg border border-gray-700 shadow-2xl overflow-hidden">
+                    <div
+                        class="grid grid-cols-12 gap-2 p-3 bg-gray-800 text-gray-400 font-bold text-xs uppercase tracking-wider border-b border-gray-700">
+                        <div class="col-span-1">#</div>
+                        <div class="col-span-8">Topic</div>
+                        <div class="col-span-3 text-right">Count</div>
+                    </div>
+                    <ul id="list-latest" class="divide-y divide-gray-800 custom-scrollbar"></ul>
+                </div>
+            </div>
+
+            <!-- Last Hour Column -->
+            <div class="flex flex-col">
+                <h2 class="text-xl font-bold text-green-400 mb-4 glow">>> LAST_HOUR_ACTIVITY</h2>
+                <div class="bg-gray-900 rounded-lg border border-gray-700 shadow-2xl overflow-hidden flex-grow">
+                    <div
+                        class="grid grid-cols-12 gap-2 p-3 bg-gray-800 text-gray-400 font-bold text-xs uppercase tracking-wider border-b border-gray-700">
+                        <div class="col-span-1">#</div>
+                        <div class="col-span-8">Topic</div>
+                        <div class="col-span-3 text-right">1H Count</div>
+                    </div>
+                    <ul id="list-1h" class="divide-y divide-gray-800 h-[300px] overflow-y-auto custom-scrollbar"></ul>
+                </div>
+            </div>
+
+            <!-- Last 24 Hours Column -->
+            <div class="flex flex-col">
+                <h2 class="text-xl font-bold text-blue-400 mb-4 glow">>> 24H_TRENDING</h2>
+                <div class="bg-gray-900 rounded-lg border border-gray-700 shadow-2xl overflow-hidden flex-grow">
+                    <div
+                        class="grid grid-cols-12 gap-2 p-3 bg-gray-800 text-gray-400 font-bold text-xs uppercase tracking-wider border-b border-gray-700">
+                        <div class="col-span-1">#</div>
+                        <div class="col-span-8">Topic</div>
+                        <div class="col-span-3 text-right">24H Count</div>
+                    </div>
+                    <ul id="list-24h" class="divide-y divide-gray-800 h-[300px] overflow-y-auto custom-scrollbar"></ul>
+                </div>
+            </div>
+
+            <!-- Last 7 Days Column -->
+            <div class="flex flex-col">
+                <h2 class="text-xl font-bold text-purple-400 mb-4 glow">>> 7_DAY_TRENDS</h2>
+                <div class="bg-gray-900 rounded-lg border border-gray-700 shadow-2xl overflow-hidden flex-grow">
+                    <div
+                        class="grid grid-cols-12 gap-2 p-3 bg-gray-800 text-gray-400 font-bold text-xs uppercase tracking-wider border-b border-gray-700">
+                        <div class="col-span-1">#</div>
+                        <div class="col-span-8">Topic</div>
+                        <div class="col-span-3 text-right">7D Count</div>
+                    </div>
+                    <ul id="list-7d" class="divide-y divide-gray-800 h-[300px] overflow-y-auto custom-scrollbar"></ul>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Shared Tooltip -->
+    <div id="tooltip"
+        class="fixed hidden w-96 p-4 bg-gray-900 border border-gray-600 rounded shadow-2xl text-xs text-gray-300 z-[9999] pointer-events-none transition-opacity duration-200">
+        <div class="font-bold text-white mb-2 border-b border-gray-700 pb-1">Summary</div>
+        <div id="tooltip-summary" class="mb-3"></div>
+
+        <div class="font-bold text-white mb-1 border-b border-gray-700 pb-1">Activity Graph</div>
+        <div id="tooltip-sparkline" class="mb-3 h-12 w-full"></div>
+
+        <div class="font-bold text-white mb-1 border-b border-gray-700 pb-1">Recent Posts</div>
+        <ul id="tooltip-posts" class="list-disc pl-4 space-y-1 text-gray-400"></ul>
+    </div>
+
+    <script type="module">
+        const listLatest = document.getElementById('list-latest');
+        const list1h = document.getElementById('list-1h');
+        const list24h = document.getElementById('list-24h');
+        const list7d = document.getElementById('list-7d');
+        const statusDot = document.querySelector('.animate-pulse');
+        const statusText = document.querySelector('.text-sm.text-gray-400');
+        const systemStatus = document.getElementById('system-status');
+        const tooltip = document.getElementById('tooltip');
+        const tooltipSummary = document.getElementById('tooltip-summary');
+        const tooltipPosts = document.getElementById('tooltip-posts');
+
+        let previousCountsLatest = {};
+        let previousCounts1h = {};
+        let previousCounts24h = {};
+        let previousCounts7d = {};
+        let tooltipTimeout;
+        let pinnedTooltipId = null; // Track pinned state
+
+        try {
+            window.autoAnimate(listLatest);
+            window.autoAnimate(list1h);
+            window.autoAnimate(list24h);
+            window.autoAnimate(list7d);
+        } catch (e) {
+            console.warn("AutoAnimate failed to load:", e);
+        }
+
+        // Tooltip Interaction Logic
+        tooltip.addEventListener('mouseenter', () => {
+            if (!pinnedTooltipId) {
+                clearTimeout(tooltipTimeout);
+            }
+        });
+
+        tooltip.addEventListener('mouseleave', () => {
+            if (!pinnedTooltipId) {
+                tooltip.classList.add('hidden');
+                tooltip.classList.add('pointer-events-none');
+            }
+        });
+
+        // Global click to unpin
+        document.addEventListener('click', (e) => {
+            if (pinnedTooltipId && !e.target.closest('li') && !e.target.closest('#tooltip')) {
+                pinnedTooltipId = null;
+                tooltip.classList.add('hidden');
+                tooltip.classList.add('pointer-events-none');
+                // Remove highlight from all items
+                document.querySelectorAll('li').forEach(li => li.classList.remove('bg-gray-800', 'border-l-4', 'border-blue-500'));
+            }
+        });
+
+        function connect() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/ws`;
+            console.log("Connecting to:", wsUrl);
+
+            const ws = new WebSocket(wsUrl);
+
+            ws.onopen = function () {
+                console.log("Connected!");
+                statusDot.className = "w-3 h-3 bg-green-500 rounded-full animate-pulse";
+                statusText.innerText = "ONLINE";
+                statusText.className = "text-sm text-green-400";
+            };
+
+            ws.onmessage = function (event) {
+                const data = JSON.parse(event.data);
+                render(listLatest, data.latest_updates, previousCountsLatest);
+                render(list1h, data.last_hour, previousCounts1h);
+                render(list24h, data.last_24h, previousCounts24h);
+                render(list7d, data.last_7d, previousCounts7d);
+
+                if (data.system_status) {
+                    systemStatus.innerText = data.system_status.latest_processed_time;
+                }
+            };
+
+            ws.onclose = function () {
+                console.log("Disconnected. Reconnecting in 2s...");
+                statusDot.className = "w-3 h-3 bg-red-500 rounded-full";
+                statusText.innerText = "OFFLINE";
+                statusText.className = "text-sm text-red-400";
+                setTimeout(connect, 2000);
+            };
+
+            ws.onerror = function (err) {
+                console.error("WebSocket Error:", err);
+                ws.close();
+            };
+        }
+
+        function render(container, items, tracker) {
+            container.innerHTML = '';
+            if (!items || items.length === 0) {
+                container.innerHTML = '<li class="p-4 text-center text-gray-600 text-sm">No active topics...</li>';
+                return;
+            }
+
+            items.forEach((item, index) => {
+                const li = document.createElement('li');
+                li.className = "grid grid-cols-12 gap-2 p-3 hover:bg-gray-800 transition-colors duration-200 items-center cursor-pointer border-l-4 border-transparent";
+                li.dataset.id = item.id;
+
+                // Check for update
+                if (tracker[item.id] !== undefined && tracker[item.id] !== item.count) {
+                    li.classList.add('flash-update');
+                }
+                tracker[item.id] = item.count;
+
+                li.innerHTML = `
+                    <div class="col-span-1 text-gray-500 font-bold text-lg">${index + 1}</div>
+                    <div class="col-span-8">
+                        <div class="font-bold text-white text-sm truncate" title="${item.label}">${item.label}</div>
+                        <div class="text-xs text-gray-500 font-mono mt-1">${item.updated}</div>
+                    </div>
+                    <div class="col-span-3 text-right text-blue-400 font-mono text-lg">${item.count}</div>
+                `;
+
+                const showTooltip = (e) => {
+                    tooltipSummary.textContent = item.summary;
+
+                    if (item.recent_posts && item.recent_posts.length > 0) {
+                        tooltipPosts.innerHTML = item.recent_posts.map(post => {
+                            let content = typeof post === 'string' ? post : post.content;
+                            let url = '#';
+
+                            if (typeof post === 'object' && post.uri && post.author_did) {
+                                const rkey = post.uri.split('/').pop();
+                                url = `https://bsky.app/profile/${post.author_did}/post/${rkey}`;
+                            }
+
+                            const truncated = content.length > 100 ? content.substring(0, 100) + '...' : content;
+
+                            if (url !== '#') {
+                                return `<li><a href="${url}" target="_blank" class="text-blue-400 hover:underline pointer-events-auto">${truncated}</a></li>`;
+                            } else {
+                                return `<li>${truncated}</li>`;
+                            }
+                        }).join('');
+                    } else {
+                        tooltipPosts.innerHTML = '<li>No recent posts available.</li>';
+                    }
+
+                    // Sparkline
+                    const sparklineContainer = document.getElementById('tooltip-sparkline');
+                    if (item.sparkline && item.sparkline.length > 1) {
+                        sparklineContainer.innerHTML = createSparkline(item.sparkline);
+                        sparklineContainer.classList.remove('hidden');
+                    } else {
+                        sparklineContainer.classList.add('hidden');
+                    }
+
+                    tooltip.classList.remove('hidden');
+                    tooltip.classList.remove('pointer-events-none');
+                    updateTooltipPosition(e);
+                };
+
+                // Click to Pin
+                li.addEventListener('click', (e) => {
+                    e.stopPropagation(); // Prevent global click
+
+                    if (pinnedTooltipId === item.id) {
+                        // Unpin if clicking same item
+                        pinnedTooltipId = null;
+                        tooltip.classList.add('hidden');
+                        tooltip.classList.add('pointer-events-none');
+                        li.classList.remove('bg-gray-800', 'border-blue-500');
+                    } else {
+                        // Pin new item
+                        pinnedTooltipId = item.id;
+
+                        // Reset other items
+                        document.querySelectorAll('li').forEach(el => el.classList.remove('bg-gray-800', 'border-blue-500'));
+
+                        // Highlight this item
+                        li.classList.add('bg-gray-800', 'border-blue-500');
+
+                        showTooltip(e);
+                    }
+                });
+
+                // Hover Events (only if not pinned)
+                li.addEventListener('mouseenter', (e) => {
+                    if (!pinnedTooltipId) {
+                        clearTimeout(tooltipTimeout);
+                        showTooltip(e);
+                    }
+                });
+
+                li.addEventListener('mousemove', (e) => {
+                    if (!pinnedTooltipId) {
+                        updateTooltipPosition(e);
+                    }
+                });
+
+                li.addEventListener('mouseleave', () => {
+                    if (!pinnedTooltipId) {
+                        tooltipTimeout = setTimeout(() => {
+                            tooltip.classList.add('hidden');
+                            tooltip.classList.add('pointer-events-none');
+                        }, 300);
+                    }
+                });
+
+                container.appendChild(li);
+            });
+        }
+
+        function createSparkline(data) {
+            const width = 350;
+            const height = 50;
+            const max = Math.max(...data);
+            const min = Math.min(...data);
+            const range = max - min || 1;
+
+            // Generate points
+            const points = data.map((val, i) => {
+                const x = (i / (data.length - 1)) * width;
+                const y = height - ((val - min) / range) * height;
+                return `${x},${y}`;
+            }).join(' ');
+
+            return `
+                <svg width="100%" height="${height}" viewBox="0 0 ${width} ${height}" class="overflow-visible">
+                    <path d="M0,${height} ${points} L${width},${height}" fill="rgba(52, 211, 153, 0.1)" stroke="none" />
+                    <polyline points="${points}" fill="none" stroke="#34d399" stroke-width="2" vector-effect="non-scaling-stroke" />
+                </svg>
+                <div class="flex justify-between text-[10px] text-gray-500 mt-1 font-mono">
+                    <span>Oldest</span>
+                    <span>Newest</span>
+                </div>
+            `;
+        }
+
+        function updateTooltipPosition(e) {
+            const x = e.clientX + 15;
+            const y = e.clientY + 15;
+
+            // Boundary checks
+            const tooltipRect = tooltip.getBoundingClientRect();
+            let finalX = x;
+            let finalY = y;
+
+            if (x + tooltipRect.width > window.innerWidth) {
+                finalX = e.clientX - tooltipRect.width - 15;
+            }
+            if (y + tooltipRect.height > window.innerHeight) {
+                finalY = e.clientY - tooltipRect.height - 15;
+            }
+
+            tooltip.style.left = `${finalX}px`;
+            tooltip.style.top = `${finalY}px`;
+        }
+
+        connect();
+    </script>
+</body>
+
+</html>

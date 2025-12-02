@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-bsky_sentiment}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  ingestion:
+    build: 
+      context: ./bsky-sentiment
+      dockerfile: Dockerfile
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-bsky_sentiment}
+      BSKY_USERNAME: ${BSKY_USERNAME}
+      BSKY_PASSWORD: ${BSKY_PASSWORD}
+    command: ["python", "ingestion/main.py"]
+
+  processing:
+    build: 
+      context: ./bsky-sentiment
+      dockerfile: Dockerfile
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-bsky_sentiment}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      CEREBRAS_API_KEY: ${CEREBRAS_API_KEY}
+    # Run pipeline
+    command: ["python", "processing/pipeline.py"]
+
+  dashboard:
+    build: 
+      context: ./bsky-sentiment
+      dockerfile: Dockerfile
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-bsky_sentiment}
+    volumes:
+      - ./dashboard:/app/dashboard
+    # Run server
+    command: ["uvicorn", "dashboard.server:app", "--host", "0.0.0.0", "--port", "8000"]
+
+volumes:
+  postgres_data:
