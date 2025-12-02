@@ -415,8 +415,20 @@
         }
 
         let chart;
+        let isHoveringChart = false;
+
+        document.querySelector("#sentiment-chart").addEventListener('mouseenter', () => {
+            isHoveringChart = true;
+        });
+
+        document.querySelector("#sentiment-chart").addEventListener('mouseleave', () => {
+            isHoveringChart = false;
+        });
 
         function updateChart(historyData) {
+            // Pause updates if user is hovering to allow tooltip inspection
+            if (isHoveringChart && chart) return;
+
             const series = [];
 
             Object.keys(historyData).forEach(clusterId => {
