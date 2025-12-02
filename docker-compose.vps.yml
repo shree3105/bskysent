@@ -35,7 +35,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      DATABASE_URL: ${DATABASE_URL}
+      - DATABASE_URL=${DATABASE_URL}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -51,8 +51,8 @@ services:
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - GROQ_API_KEY=${GROQ_API_KEY}
-    depends_on:
-      - db
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - app_network
 
