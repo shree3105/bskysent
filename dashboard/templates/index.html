@@ -228,6 +228,13 @@
                 statusDot.className = "w-3 h-3 bg-green-500 rounded-full animate-pulse";
                 statusText.innerText = "ONLINE";
                 statusText.className = "text-sm text-green-400";
+
+                // Heartbeat to keep connection alive
+                setInterval(() => {
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send("ping");
+                    }
+                }, 30000);
             };
 
             ws.onmessage = function (event) {

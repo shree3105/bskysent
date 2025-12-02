@@ -36,8 +36,8 @@ except Exception as e:
 # Initialize FastAPI
 app = FastAPI()
 
-async def get_top_clusters():
-    """Fetch top clusters split by time window"""
+def _get_top_clusters_sync():
+    """Fetch top clusters split by time window (Synchronous)"""
     try:
         with engine.connect() as conn:
             # 1. Last Hour (True Trending Velocity)
@@ -331,6 +331,10 @@ async def get_top_clusters():
             "sentiment_history": {},
             "system_status": {"latest_processed_time": f"Error: {str(e)}"}
         }
+
+async def get_top_clusters():
+    """Async wrapper for synchronous DB fetch"""
+    return await asyncio.to_thread(_get_top_clusters_sync)
 
 class ConnectionManager:
     def __init__(self):
