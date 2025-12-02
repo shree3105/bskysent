@@ -9,8 +9,8 @@ services:
     environment:
       # Connects to the shared DB via the host gateway or specific network
       DATABASE_URL: ${DATABASE_URL}
-      BSKY_USERNAME: ${BSKY_USERNAME}
-      BSKY_PASSWORD: ${BSKY_PASSWORD}
+      BLUESKY_HANDLE: ${BLUESKY_HANDLE}
+      BLUESKY_PASSWORD: ${BLUESKY_PASSWORD}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     command: ["python", "ingestion/main.py"]
