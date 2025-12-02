@@ -35,8 +35,6 @@ except Exception as e:
 
 # Initialize FastAPI
 app = FastAPI()
-app.mount("/static", StaticFiles(directory="static"), name="static")
-templates = Jinja2Templates(directory="templates")
 
 async def get_top_clusters():
     """Fetch top clusters split by time window"""
