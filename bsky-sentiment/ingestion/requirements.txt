@@ -9,3 +9,7 @@ numpy
 requests
 fastapi
 uvicorn
+sentence-transformers
+gliner
+transformers
+torch
