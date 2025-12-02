@@ -7,4 +7,9 @@ venv/
 .vscode/
 *.log
 bsky_backup.dump
+bsky_backup.dump
 scripts/fix_env.py
+*.safetensors
+*.bin
+checkpoint-*/
+bsky-sentiment/models/noise_filter_v1/
