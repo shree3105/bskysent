@@ -163,16 +163,61 @@ async def get_top_clusters():
                 ORDER BY tr.rated_at ASC
             """))
 
-            # Process Sentiment Data
-            sentiment_data = {}
-            for row in result_sentiment:
-                cid = row[0]
-                if cid not in sentiment_data:
-                    sentiment_data[cid] = {"label": row[1], "data": []}
-                sentiment_data[cid]["data"].append({"t": row[3].isoformat(), "y": row[2]})
+            # Process Sentiment Data with Bucketing (10-minute intervals)
+            from datetime import datetime, timedelta, timezone
+            
+            # 1. Define buckets
+            now = datetime.now(timezone.utc)
+            # Round down to nearest 10 minutes
+            start_time = now - timedelta(hours=24)
+            start_time = start_time.replace(minute=(start_time.minute // 10) * 10, second=0, microsecond=0)
+            
+            buckets = []
+            curr = start_time
+            while curr <= now:
+                buckets.append(curr)
+                curr += timedelta(minutes=10)
+            
+            # 2. Group data by cluster
+            rows = result_sentiment.fetchall()
+            cluster_data = {}
+            for r in rows:
+                cid = r[0]
+                label = r[1]
+                score = r[2]
+                t = r[3]
+                # Ensure t is timezone-aware (UTC)
+                if t.tzinfo is None:
+                    t = t.replace(tzinfo=timezone.utc)
+                
+                if cid not in cluster_data:
+                    cluster_data[cid] = {'label': label, 'points': {}}
+                
+                # Bucket this point
+                t_bucket = t.replace(minute=(t.minute // 10) * 10, second=0, microsecond=0)
+                
+                if t_bucket not in cluster_data[cid]['points']:
+                    cluster_data[cid]['points'][t_bucket] = []
+                cluster_data[cid]['points'][t_bucket].append(score)
+
+            # 3. Fill buckets
+            final_history = {}
+            for cid, info in cluster_data.items():
+                data_points = []
+                for b in buckets:
+                    val = 0 
+                    if b in info['points']:
+                        vals = info['points'][b]
+                        val = sum(vals) / len(vals)
+                    data_points.append({'t': b.isoformat(), 'y': val})
+                
+                final_history[cid] = {
+                    'label': info['label'],
+                    'data': data_points
+                }
 
             # System Status
-            system_status = {"latest_processed_time": "Now"}
+            system_status = {"latest_processed_time": datetime.now().strftime("%H:%M:%S UTC")}
 
             from datetime import datetime, timedelta, timezone
             
@@ -243,6 +288,11 @@ async def get_top_clusters():
                         content = latest_post['content'] if isinstance(latest_post, dict) else latest_post
                         # Truncate to keep it clean
                         label = f"New: {content[:60]}..." if len(content) > 60 else f"New: {content}"
+                    
+                    # Safe rating access
+                    rating_obj = None
+                    if len(row) > 7 and row[7]:
+                         rating_obj = row[7]
 
                     data.append({
                         "id": row[0],
@@ -252,7 +302,7 @@ async def get_top_clusters():
                         "summary": row[4] if row[4] else "No summary available.",
                         "recent_posts": row[5] if row[5] else [],
                         "sparkline": sparkline_filled,
-                        "rating": row[7] if len(row) > 7 and row[7] else None # Row 7 is the new rating object
+                        "rating": rating_obj
                     })
                 return data
 
@@ -261,16 +311,24 @@ async def get_top_clusters():
                 "last_hour": format_rows(result_1h.fetchall(), '1h'),
                 "last_24h": format_rows(result_24h.fetchall(), '24h'),
                 "last_7d": format_rows(result_7d.fetchall(), '7d'),
-                "sentiment_history": sentiment_data,
+                "sentiment_history": final_history,
                 "system_status": system_status
             }
+
     except Exception as e:
-        logger.error(f"Error fetching clusters: {e}")
-        return {"last_hour": [], "last_24h": [], "last_7d": [], "sentiment_history": {}}
+        logger.error(f"Error in get_top_clusters: {e}")
+        import traceback
+        traceback.print_exc()
+        # Return empty structure on error to prevent frontend crash
+        return {
+            "latest_updates": [],
+            "last_hour": [],
+            "last_24h": [],
+            "last_7d": [],
+            "sentiment_history": {},
+            "system_status": {"latest_processed_time": f"Error: {str(e)}"}
+        }
 
-app = FastAPI()
-
-# Store connected clients
 class ConnectionManager:
     def __init__(self):
         self.active_connections: List[WebSocket] = []
@@ -326,6 +384,24 @@ async def broadcast_updates():
 
 @app.on_event("startup")
 async def startup_event():
+    # Ensure table exists (idempotent check)
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS topic_ratings (
+                    id SERIAL PRIMARY KEY,
+                    cluster_id INTEGER REFERENCES clusters(id),
+                    rating_score INTEGER,
+                    sentiment TEXT,
+                    reasoning TEXT,
+                    rated_at TIMESTAMP DEFAULT NOW()
+                );
+            """))
+            conn.commit()
+            logger.info("Ensured topic_ratings table exists.")
+    except Exception as e:
+        logger.error(f"Failed to ensure table exists: {e}")
+
     asyncio.create_task(broadcast_updates())
 
 if __name__ == "__main__":
