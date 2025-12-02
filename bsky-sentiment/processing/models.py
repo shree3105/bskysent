@@ -43,30 +43,35 @@ class LocalModels:
         else:
             self.client = None
 
-    def _call_cerebras_with_retry(self, messages, max_tokens=50, max_retries=3):
-        if not self.client:
-            return None
-            
-        for attempt in range(max_retries):
-            try:
-                return self.client.chat.completions.create(
-                    messages=messages,
-                    model=CEREBRAS_MODEL,
-                    temperature=0,
-                    max_tokens=max_tokens,
-                )
-            except Exception as e:
-                error_str = str(e)
-                if "429" in error_str or "Too Many Requests" in error_str:
-                    wait_time = 5 * (2 ** attempt) # 5s, 10s, 20s
-                    logger.warning(f"⚠️ Cerebras Rate Limit (429). Retrying in {wait_time}s...")
-                    time.sleep(wait_time)
-                else:
-                    logger.error(f"Cerebras API Error: {e}")
-                    return None
+        # 1. SBERT (Vector Embeddings)
+        logger.info("Loading SBERT (all-MiniLM-L6-v2)...")
+        self.sbert = SentenceTransformer('all-MiniLM-L6-v2', device=self.device)
+
+        # 2. GLiNER (Entity Extraction)
+        logger.info("Loading GLiNER (gliner_small-v2.1)...")
+        self.gliner = GLiNER.from_pretrained("urchade/gliner_small-v2.1").to(self.device)
+
+        # 3. ModernBERT (Noise Filter)
+        # Load locally trained model
+        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+        MODEL_PATH = os.path.join(BASE_DIR, "../models/noise_filter_v1")
         
-        logger.error("❌ Cerebras Max Retries Exceeded.")
-        return None
+        if os.path.exists(MODEL_PATH):
+            logger.info(f"Loading Noise Filter from {MODEL_PATH}...")
+            self.noise_tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
+            self.noise_model = AutoModelForSequenceClassification.from_pretrained(MODEL_PATH).to(self.device)
+            self.noise_model.eval()
+            self.use_trained_filter = True
+        else:
+            logger.warning(f"Trained model not found at {MODEL_PATH}. Falling back to Zero-Shot.")
+            self.noise_classifier = pipeline("zero-shot-classification", model="cross-encoder/nli-deberta-v3-xsmall", device=0 if self.device == "cuda" else -1)
+            self.use_trained_filter = False
+
+        # 4. Cross-Encoder (Local Tie-Breaker)
+        # Much more accurate than SBERT for pair comparison, and runs locally (No Rate Limits!)
+        from sentence_transformers import CrossEncoder
+        logger.info("Loading Cross-Encoder (ms-marco-MiniLM-L-6-v2)...")
+        self.cross_encoder = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2', device=self.device)
 
         # 1. SBERT (Vector Embeddings)
         logger.info("Loading SBERT (all-MiniLM-L6-v2)...")
@@ -318,3 +323,28 @@ class LocalModels:
         except Exception as e:
             logger.error(f"Cerebras Headline failed: {e}")
             return "Breaking News"
+
+    def _call_cerebras_with_retry(self, messages, max_tokens=50, max_retries=3):
+        if not self.client:
+            return None
+            
+        for attempt in range(max_retries):
+            try:
+                return self.client.chat.completions.create(
+                    messages=messages,
+                    model=CEREBRAS_MODEL,
+                    temperature=0,
+                    max_tokens=max_tokens,
+                )
+            except Exception as e:
+                error_str = str(e)
+                if "429" in error_str or "Too Many Requests" in error_str:
+                    wait_time = 5 * (2 ** attempt) # 5s, 10s, 20s
+                    logger.warning(f"⚠️ Cerebras Rate Limit (429). Retrying in {wait_time}s...")
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"Cerebras API Error: {e}")
+                    return None
+        
+        logger.error("❌ Cerebras Max Retries Exceeded.")
+        return None
