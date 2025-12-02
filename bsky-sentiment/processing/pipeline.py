@@ -308,9 +308,9 @@ class Pipeline:
                 self.mark_processed(uri)
             
             # Only sleep if we processed a batch to avoid hammering CPU, but short enough to clear backlog
-            # Cerebras Limit: 14,400/day (~10/min). Sleep 6s to be safe.
+            # Cerebras Limit: 14,400/day (~10/min). Sleep 10s (Retry logic handles spikes).
             logger.info("Batch complete. Checking for more...")
-            time.sleep(6)
+            time.sleep(10)
 
 if __name__ == "__main__":
     pipeline = Pipeline()

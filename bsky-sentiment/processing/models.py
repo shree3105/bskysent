@@ -43,6 +43,31 @@ class LocalModels:
         else:
             self.client = None
 
+    def _call_cerebras_with_retry(self, messages, max_tokens=50, max_retries=3):
+        if not self.client:
+            return None
+            
+        for attempt in range(max_retries):
+            try:
+                return self.client.chat.completions.create(
+                    messages=messages,
+                    model=CEREBRAS_MODEL,
+                    temperature=0,
+                    max_tokens=max_tokens,
+                )
+            except Exception as e:
+                error_str = str(e)
+                if "429" in error_str or "Too Many Requests" in error_str:
+                    wait_time = 5 * (2 ** attempt) # 5s, 10s, 20s
+                    logger.warning(f"⚠️ Cerebras Rate Limit (429). Retrying in {wait_time}s...")
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"Cerebras API Error: {e}")
+                    return None
+        
+        logger.error("❌ Cerebras Max Retries Exceeded.")
+        return None
+
         # 1. SBERT (Vector Embeddings)
         logger.info("Loading SBERT (all-MiniLM-L6-v2)...")
         self.sbert = SentenceTransformer('all-MiniLM-L6-v2', device=self.device)
@@ -191,12 +216,14 @@ class LocalModels:
         """
         
         try:
-            chat_completion = self.client.chat.completions.create(
+            chat_completion = self._call_cerebras_with_retry(
                 messages=[{"role": "user", "content": prompt}],
-                model=CEREBRAS_MODEL,
-                temperature=0,
-                max_tokens=50, # Reduced further
+                max_tokens=50
             )
+            
+            if not chat_completion:
+                return [False] * len(candidates)
+
             result = chat_completion.choices[0].message.content.strip()
             logger.info(f"Batch Verification Result:\n{result}")
             
@@ -255,17 +282,14 @@ class LocalModels:
         
         try:
             start_time = time.time()
-            chat_completion = self.client.chat.completions.create(
-                messages=[
-                    {
-                        "role": "user",
-                        "content": prompt,
-                    }
-                ],
-                model=CEREBRAS_MODEL,
-                temperature=0,
-                max_tokens=50, 
+            start_time = time.time()
+            chat_completion = self._call_cerebras_with_retry(
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=50
             )
+            
+            if not chat_completion:
+                return "Breaking News"
             duration = time.time() - start_time
             result = chat_completion.choices[0].message.content.strip().replace('"', '')
             
