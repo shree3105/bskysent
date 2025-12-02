@@ -411,6 +411,201 @@
                 <span>Oldest</span>
                 <span>Newest</span>
             </div>
+        function connect() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${ protocol }//${window.location.host}/ws`;
+            console.log("Connecting to:", wsUrl);
+
+            const ws = new WebSocket(wsUrl);
+
+            ws.onopen = function () {
+                console.log("Connected!");
+                statusDot.className = "w-3 h-3 bg-green-500 rounded-full animate-pulse";
+                statusText.innerText = "ONLINE";
+                statusText.className = "text-sm text-green-400";
+            };
+
+            ws.onmessage = function (event) {
+                const data = JSON.parse(event.data);
+                render(listLatest, data.latest_updates, previousCountsLatest);
+                render(list1h, data.last_hour, previousCounts1h);
+                render(list24h, data.last_24h, previousCounts24h);
+                render(list7d, data.last_7d, previousCounts7d);
+
+                if (data.sentiment_history) {
+                    updateChart(data.sentiment_history);
+                }
+
+                if (data.system_status) {
+                    systemStatus.innerText = data.system_status.latest_processed_time;
+                }
+            };
+
+            ws.onclose = function () {
+                console.log("Disconnected. Reconnecting in 2s...");
+                statusDot.className = "w-3 h-3 bg-red-500 rounded-full";
+                statusText.innerText = "OFFLINE";
+                statusText.className = "text-sm text-red-400";
+                setTimeout(connect, 2000);
+            };
+
+            ws.onerror = function (err) {
+                console.error("WebSocket Error:", err);
+                ws.close();
+            };
+        }
+
+        function render(container, items, tracker) {
+            container.innerHTML = '';
+            if (!items || items.length === 0) {
+                container.innerHTML = '<li class="p-4 text-center text-gray-600 text-sm">No active topics...</li>';
+                return;
+            }
+
+            items.forEach((item, index) => {
+                const li = document.createElement('li');
+                li.className = "grid grid-cols-12 gap-2 p-3 hover:bg-gray-800 transition-colors duration-200 items-center cursor-pointer border-l-4 border-transparent";
+                li.dataset.id = item.id;
+
+                // Check for update
+                if (tracker[item.id] !== undefined && tracker[item.id] !== item.count) {
+                    li.classList.add('flash-update');
+                    setTimeout(() => li.classList.remove('flash-update'), 1000);
+                }
+                tracker[item.id] = item.count;
+
+                // Rank
+                const rankSpan = document.createElement('div');
+                rankSpan.className = "col-span-1 text-gray-500 font-mono";
+                rankSpan.innerText = `#${index + 1}`;
+                li.appendChild(rankSpan);
+
+                // Label
+                const labelDiv = document.createElement('div');
+                labelDiv.className = "col-span-8 truncate font-bold text-gray-300";
+                labelDiv.innerText = item.label;
+                li.appendChild(labelDiv);
+
+                // Count
+                const countDiv = document.createElement('div');
+                countDiv.className = "col-span-3 text-right font-mono text-green-400";
+                countDiv.innerText = item.count;
+                li.appendChild(countDiv);
+
+                // Tooltip Events
+                function showTooltip(e) {
+                    tooltipSummary.innerText = item.summary;
+
+                    if (item.recent_posts && item.recent_posts.length > 0) {
+                        tooltipPosts.innerHTML = item.recent_posts.map(post => {
+                            let content = typeof post === 'string' ? post : post.content;
+                            let url = '#';
+
+                            if (typeof post === 'object' && post.uri && post.author_did) {
+                                const rkey = post.uri.split('/').pop();
+                                url = `https://bsky.app/profile/${post.author_did}/post/${rkey}`;
+                            }
+
+                            const truncated = content.length > 100 ? content.substring(0, 100) + '...' : content;
+
+                            if (url !== '#') {
+                                return `<li><a href="${url}" target="_blank" class="text-blue-400 hover:underline pointer-events-auto">${truncated}</a></li>`;
+                            } else {
+                                return `<li>${truncated}</li>`;
+                            }
+                        }).join('');
+                    } else {
+                        tooltipPosts.innerHTML = '<li>No recent posts available.</li>';
+                    }
+
+                    // Sparkline
+                    const sparklineContainer = document.getElementById('tooltip-sparkline');
+                    if (item.sparkline && item.sparkline.length > 1) {
+                        sparklineContainer.innerHTML = createSparkline(item.sparkline);
+                        sparklineContainer.classList.remove('hidden');
+                    } else {
+                        sparklineContainer.classList.add('hidden');
+                    }
+
+                    tooltip.classList.remove('hidden');
+                    tooltip.classList.remove('pointer-events-none');
+                    updateTooltipPosition(e);
+                };
+
+                // Click to Pin
+                li.addEventListener('click', (e) => {
+                    e.stopPropagation(); // Prevent global click
+
+                    if (pinnedTooltipId === item.id) {
+                        // Unpin if clicking same item
+                        pinnedTooltipId = null;
+                        tooltip.classList.add('hidden');
+                        tooltip.classList.add('pointer-events-none');
+                        li.classList.remove('bg-gray-800', 'border-blue-500');
+                    } else {
+                        // Pin new item
+                        pinnedTooltipId = item.id;
+
+                        // Reset other items
+                        document.querySelectorAll('li').forEach(el => el.classList.remove('bg-gray-800', 'border-blue-500'));
+
+                        // Highlight this item
+                        li.classList.add('bg-gray-800', 'border-blue-500');
+
+                        showTooltip(e);
+                    }
+                });
+
+                // Hover Events (only if not pinned)
+                li.addEventListener('mouseenter', (e) => {
+                    if (!pinnedTooltipId) {
+                        clearTimeout(tooltipTimeout);
+                        showTooltip(e);
+                    }
+                });
+
+                li.addEventListener('mousemove', (e) => {
+                    if (!pinnedTooltipId) {
+                        updateTooltipPosition(e);
+                    }
+                });
+
+                li.addEventListener('mouseleave', () => {
+                    if (!pinnedTooltipId) {
+                        tooltipTimeout = setTimeout(() => {
+                            tooltip.classList.add('hidden');
+                            tooltip.classList.add('pointer-events-none');
+                        }, 300);
+                    }
+                });
+
+                container.appendChild(li);
+            });
+        }
+
+        function createSparkline(data) {
+            const width = 350;
+            const height = 50;
+            const max = Math.max(...data);
+            const min = Math.min(...data);
+            const range = max - min || 1;
+
+            // Generate points
+            const points = data.map((val, i) => {
+                const x = (i / (data.length - 1)) * width;
+                const y = height - ((val - min) / range) * height;
+                return `${x},${y}`;
+            }).join(' ');
+
+            return `
+            <svg width="100%" height="${height}" viewBox="0 0 ${width} ${height}" class="overflow-visible">
+                <path d="M0,${height} ${points} L${width},${height}" fill="rgba(52, 211, 153, 0.1)" stroke="none" />
+                <polyline points="${points}" fill="none" stroke="#34d399" stroke-width="2" vector-effect="non-scaling-stroke" />
+            </svg>
+            <div class="flex justify-between text-[10px] text-gray-500 mt-1 font-mono">
+                <span>Oldest</span>
+                <span>Newest</span>
+            </div>
         `;
         }
 
@@ -448,261 +643,67 @@
                     type: 'solid',
                     opacity: 0.8
                 },
-                ws.onerror = function (err) {
-                    console.error("WebSocket Error:", err);
-                    ws.close();
-                };
-            }
-
-            function render(container, items, tracker) {
-                container.innerHTML = '';
-                if (!items || items.length === 0) {
-                    container.innerHTML = '<li class="p-4 text-center text-gray-600 text-sm">No active topics...</li>';
-                    return;
-                }
-
-                items.forEach((item, index) => {
-                    const li = document.createElement('li');
-                    li.className = "grid grid-cols-12 gap-2 p-3 hover:bg-gray-800 transition-colors duration-200 items-center cursor-pointer border-l-4 border-transparent";
-                    li.dataset.id = item.id;
-
-                    // Check for update
-                    if (tracker[item.id] !== undefined && tracker[item.id] !== item.count) {
-                        li.classList.add('flash-update');
-                        setTimeout(() => li.classList.remove('flash-update'), 1000);
-                    }
-                    tracker[item.id] = item.count;
-
-                    // Rank
-                    const rankSpan = document.createElement('div');
-                    rankSpan.className = "col-span-1 text-gray-500 font-mono";
-                    rankSpan.innerText = `#${index + 1}`;
-                    li.appendChild(rankSpan);
-
-                    // Label
-                    const labelDiv = document.createElement('div');
-                    labelDiv.className = "col-span-8 truncate font-bold text-gray-300";
-                    labelDiv.innerText = item.label;
-                    li.appendChild(labelDiv);
-
-                    // Count
-                    const countDiv = document.createElement('div');
-                    countDiv.className = "col-span-3 text-right font-mono text-green-400";
-                    countDiv.innerText = item.count;
-                    li.appendChild(countDiv);
-
-                    // Tooltip Events
-                    function showTooltip(e) {
-                        tooltipSummary.innerText = item.summary;
-
-                        if (item.recent_posts && item.recent_posts.length > 0) {
-                            tooltipPosts.innerHTML = item.recent_posts.map(post => {
-                                let content = typeof post === 'string' ? post : post.content;
-                                let url = '#';
-
-                                if (typeof post === 'object' && post.uri && post.author_did) {
-                                    const rkey = post.uri.split('/').pop();
-                                    url = `https://bsky.app/profile/${post.author_did}/post/${rkey}`;
-                                }
-
-                                const truncated = content.length > 100 ? content.substring(0, 100) + '...' : content;
-
-                                if (url !== '#') {
-                                    return `<li><a href="${url}" target="_blank" class="text-blue-400 hover:underline pointer-events-auto">${truncated}</a></li>`;
-                                } else {
-                                    return `<li>${truncated}</li>`;
-                                }
-                            }).join('');
-                        } else {
-                            tooltipPosts.innerHTML = '<li>No recent posts available.</li>';
-                        }
-
-                        // Sparkline
-                        const sparklineContainer = document.getElementById('tooltip-sparkline');
-                        if (item.sparkline && item.sparkline.length > 1) {
-                            sparklineContainer.innerHTML = createSparkline(item.sparkline);
-                            sparklineContainer.classList.remove('hidden');
-                        } else {
-                            sparklineContainer.classList.add('hidden');
-                        }
-
-                        tooltip.classList.remove('hidden');
-                        tooltip.classList.remove('pointer-events-none');
-                        updateTooltipPosition(e);
-                    };
-
-                    // Click to Pin
-                    li.addEventListener('click', (e) => {
-                        e.stopPropagation(); // Prevent global click
-
-                        if (pinnedTooltipId === item.id) {
-                            // Unpin if clicking same item
-                            pinnedTooltipId = null;
-                            tooltip.classList.add('hidden');
-                            tooltip.classList.add('pointer-events-none');
-                            li.classList.remove('bg-gray-800', 'border-blue-500');
-                        } else {
-                            // Pin new item
-                            pinnedTooltipId = item.id;
-
-                            // Reset other items
-                            document.querySelectorAll('li').forEach(el => el.classList.remove('bg-gray-800', 'border-blue-500'));
-
-                            // Highlight this item
-                            li.classList.add('bg-gray-800', 'border-blue-500');
-
-                            showTooltip(e);
-                        }
-                    });
-
-                    // Hover Events (only if not pinned)
-                    li.addEventListener('mouseenter', (e) => {
-                        if (!pinnedTooltipId) {
-                            clearTimeout(tooltipTimeout);
-                            showTooltip(e);
-                        }
-                    });
-
-                    li.addEventListener('mousemove', (e) => {
-                        if (!pinnedTooltipId) {
-                            updateTooltipPosition(e);
-                        }
-                    });
-
-                    li.addEventListener('mouseleave', () => {
-                        if (!pinnedTooltipId) {
-                            tooltipTimeout = setTimeout(() => {
-                                tooltip.classList.add('hidden');
-                                tooltip.classList.add('pointer-events-none');
-                            }, 300);
-                        }
-                    });
-
-                    container.appendChild(li);
-                });
-            }
-
-            function createSparkline(data) {
-                const width = 350;
-                const height = 50;
-                const max = Math.max(...data);
-                const min = Math.min(...data);
-                const range = max - min || 1;
-
-                // Generate points
-                const points = data.map((val, i) => {
-                    const x = (i / (data.length - 1)) * width;
-                    const y = height - ((val - min) / range) * height;
-                    return `${x},${y}`;
-                }).join(' ');
-
-                return `
-            <svg width="100%" height="${height}" viewBox="0 0 ${width} ${height}" class="overflow-visible">
-                <path d="M0,${height} ${points} L${width},${height}" fill="rgba(52, 211, 153, 0.1)" stroke="none" />
-                <polyline points="${points}" fill="none" stroke="#34d399" stroke-width="2" vector-effect="non-scaling-stroke" />
-            </svg>
-            <div class="flex justify-between text-[10px] text-gray-500 mt-1 font-mono">
-                <span>Oldest</span>
-                <span>Newest</span>
-            </div>
-        `;
-            }
-
-            let chart;
-
-            function updateChart(historyData) {
-                const series = [];
-
-                Object.keys(historyData).forEach(clusterId => {
-                    const topic = historyData[clusterId];
-                    series.push({
-                        name: topic.label,
-                        data: topic.data.map(pt => ({
-                            x: new Date(pt.t).getTime(),
-                            y: pt.y
-                        }))
-                    });
-                });
-
-                const options = {
-                    series: series,
-                    chart: {
-                        type: 'area',
-                        height: 320,
-                        stacked: true,
-                        stackType: '100%',
-                        background: 'transparent',
-                        toolbar: { show: false },
-                        animations: { enabled: false } // Disable animation for performance
-                    },
-                    colors: ['#34d399', '#60a5fa', '#f472b6', '#fbbf24', '#a78bfa', '#f87171', '#9ca3af', '#fb923c', '#22d3ee', '#e879f9'],
-                    dataLabels: { enabled: false },
-                    stroke: { curve: 'smooth', width: 0 }, // No stroke for cleaner river look
-                    fill: {
-                        type: 'solid',
-                        opacity: 0.8
-                    },
-                    theme: { mode: 'dark' },
-                    xaxis: {
-                        type: 'datetime',
-                        tooltip: { enabled: false },
-                        axisBorder: { show: false },
-                        axisTicks: { show: false }
-                    },
-                    yaxis: {
-                        show: false, // Hide Y axis as it's just relative 0-100%
-                    },
-                    grid: {
-                        borderColor: '#374151',
-                        strokeDashArray: 4,
-                        xaxis: { lines: { show: true } },
-                        yaxis: { lines: { show: false } }
-                    },
-                    legend: {
-                        show: false // User requested to remove key
-                    },
-                    tooltip: {
-                        theme: 'dark',
-                        shared: false,
-                        intersect: false,
-                        x: { format: 'dd MMM HH:mm' },
-                        y: {
-                            formatter: function (value, { series, seriesIndex, dataPointIndex, w }) {
-                                return value.toFixed(0);
-                            }
+                theme: { mode: 'dark' },
+                xaxis: {
+                    type: 'datetime',
+                    tooltip: { enabled: false },
+                    axisBorder: { show: false },
+                    axisTicks: { show: false }
+                },
+                yaxis: {
+                    show: false, // Hide Y axis as it's just relative 0-100%
+                },
+                grid: {
+                    borderColor: '#374151',
+                    strokeDashArray: 4,
+                    xaxis: { lines: { show: true } },
+                    yaxis: { lines: { show: false } }
+                },
+                legend: {
+                    show: false // User requested to remove key
+                },
+                tooltip: {
+                    theme: 'dark',
+                    shared: false,
+                    intersect: false,
+                    x: { format: 'dd MMM HH:mm' },
+                    y: {
+                        formatter: function (value, { series, seriesIndex, dataPointIndex, w }) {
+                            return value.toFixed(0);
                         }
                     }
-                };
-
-                if (!chart) {
-                    chart = new ApexCharts(document.querySelector("#sentiment-chart"), options);
-                    chart.render();
-                } else {
-                    chart.updateSeries(series);
                 }
+            };
+
+            if (!chart) {
+                chart = new ApexCharts(document.querySelector("#sentiment-chart"), options);
+                chart.render();
+            } else {
+                chart.updateSeries(series);
+            }
+        }
+
+        function updateTooltipPosition(e) {
+            const x = e.clientX + 15;
+            const y = e.clientY + 15;
+
+            // Boundary checks
+            const tooltipRect = tooltip.getBoundingClientRect();
+            let finalX = x;
+            let finalY = y;
+
+            if (x + tooltipRect.width > window.innerWidth) {
+                finalX = e.clientX - tooltipRect.width - 15;
+            }
+            if (y + tooltipRect.height > window.innerHeight) {
+                finalY = e.clientY - tooltipRect.height - 15;
             }
 
-            function updateTooltipPosition(e) {
-                const x = e.clientX + 15;
-                const y = e.clientY + 15;
+            tooltip.style.left = `${finalX}px`;
+            tooltip.style.top = `${finalY}px`;
+        }
 
-                // Boundary checks
-                const tooltipRect = tooltip.getBoundingClientRect();
-                let finalX = x;
-                let finalY = y;
-
-                if (x + tooltipRect.width > window.innerWidth) {
-                    finalX = e.clientX - tooltipRect.width - 15;
-                }
-                if (y + tooltipRect.height > window.innerHeight) {
-                    finalY = e.clientY - tooltipRect.height - 15;
-                }
-
-                tooltip.style.left = `${finalX}px`;
-                tooltip.style.top = `${finalY}px`;
-            }
-
-            connect();
+        connect();
     </script>
 </body>
 
