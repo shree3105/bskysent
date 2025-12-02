@@ -55,7 +55,14 @@ async def get_top_clusters():
                             WHERE pp3.topic_id = c.id
                               AND rp3.created_at >= NOW() - INTERVAL '1 hour'
                             GROUP BY bucket
-                        ) s) as sparkline
+                        ) s) as sparkline,
+                        -- Fetch Latest Rating
+                        (SELECT json_build_object('score', tr.rating_score, 'sentiment', tr.sentiment, 'reasoning', tr.reasoning)
+                         FROM topic_ratings tr
+                         WHERE tr.cluster_id = c.id
+                         ORDER BY tr.rated_at DESC
+                         LIMIT 1
+                        ) as rating
                 FROM clusters c
                 JOIN processed_posts pp ON c.id = pp.topic_id
                 JOIN raw_posts rp ON pp.uri = rp.uri
@@ -253,7 +260,8 @@ async def get_top_clusters():
                         "updated": row[3].strftime("%Y-%m-%d %H:%M") if row[3] else "",
                         "summary": row[4] if row[4] else "No summary available.",
                         "recent_posts": row[5] if row[5] else [],
-                        "sparkline": sparkline_filled
+                        "sparkline": sparkline_filled,
+                        "rating": row[7] if len(row) > 7 and row[7] else None # Row 7 is the new rating object
                     })
                 return data
 
