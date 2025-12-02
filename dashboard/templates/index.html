@@ -411,28 +411,6 @@
                     <span>Oldest</span>
                     <span>Newest</span>
                 </div>
-            `;
-        }
-
-        let chart;
-
-        function updateChart(historyData) {
-            const series = [];
-
-            Object.keys(historyData).forEach(clusterId => {
-                const topic = historyData[clusterId];
-                series.push({
-                    name: topic.label,
-                    data: topic.data.map(pt => ({
-                        x: new Date(pt.t).getTime(),
-                        chart.updateSeries(series);
-                    }
-        }
-
-        function updateTooltipPosition(e) {
-                        const x = e.clientX + 15;
-                        const y = e.clientY + 15;
-
                         // Boundary checks
                         const tooltipRect = tooltip.getBoundingClientRect();
                         let finalX = x;
@@ -445,8 +423,8 @@
                             finalY = e.clientY - tooltipRect.height - 15;
                         }
 
-                        tooltip.style.left = `${finalX}px`;
-                        tooltip.style.top = `${finalY}px`;
+                        tooltip.style.left = `${ finalX } px`;
+                        tooltip.style.top = `${ finalY } px`;
                     }
 
         connect();
