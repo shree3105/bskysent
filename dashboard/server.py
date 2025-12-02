@@ -34,10 +34,178 @@ except Exception as e:
     logger.error(f"DB Connection Failed: {e}")
 
 async def get_top_clusters():
-                        for pt_time, pt_count in points.items():
-                            if abs((t - pt_time).total_seconds()) < 30: # Within 30s window
-                                val = pt_count
-                                break
+    """Fetch top clusters split by time window"""
+    try:
+        with engine.connect() as conn:
+            # 1. Last Hour (True Trending Velocity)
+            result_1h = conn.execute(text("""
+                SELECT c.id, c.label, COUNT(rp.uri) as post_count, MAX(rp.created_at) as display_time, c.summary,
+                       (SELECT json_agg(t) FROM (
+                           SELECT rp2.content, rp2.uri, rp2.author_did
+                           FROM processed_posts pp2 
+                           JOIN raw_posts rp2 ON pp2.uri = rp2.uri 
+                           WHERE pp2.topic_id = c.id 
+                           ORDER BY rp2.created_at DESC 
+                           LIMIT 3
+                       ) t) as recent_posts,
+                       (
+                           SELECT json_agg(EXTRACT(EPOCH FROM created_at)) 
+                           FROM raw_posts rp3 
+                           JOIN processed_posts pp3 ON rp3.uri = pp3.uri 
+                           WHERE pp3.topic_id = c.id AND rp3.created_at >= NOW() - INTERVAL '1 hour'
+                       ) as sparkline,
+                       (SELECT row_to_json(r) FROM (SELECT rating_score, sentiment, reasoning FROM topic_ratings WHERE cluster_id = c.id ORDER BY rated_at DESC LIMIT 1) r) as rating
+                FROM clusters c
+                JOIN processed_posts pp ON c.id = pp.topic_id
+                JOIN raw_posts rp ON pp.uri = rp.uri
+                WHERE c.is_active = TRUE 
+                  AND rp.created_at >= NOW() - INTERVAL '1 hour'
+                GROUP BY c.id, c.label, c.summary
+                ORDER BY post_count DESC
+                LIMIT 10
+            """))
+
+            # 2. Latest Updates (Live Feed) - Just the very latest active topics
+            result_latest = conn.execute(text("""
+                SELECT c.id, c.label, COUNT(rp.uri) as post_count, MAX(rp.created_at) as display_time, c.summary,
+                       (SELECT json_agg(t) FROM (
+                           SELECT rp2.content, rp2.uri, rp2.author_did
+                           FROM processed_posts pp2 
+                           JOIN raw_posts rp2 ON pp2.uri = rp2.uri 
+                           WHERE pp2.topic_id = c.id 
+                           ORDER BY rp2.created_at DESC 
+                           LIMIT 3
+                       ) t) as recent_posts,
+                       NULL as sparkline,
+                       (SELECT row_to_json(r) FROM (SELECT rating_score, sentiment, reasoning FROM topic_ratings WHERE cluster_id = c.id ORDER BY rated_at DESC LIMIT 1) r) as rating
+                FROM clusters c
+                JOIN processed_posts pp ON c.id = pp.topic_id
+                JOIN raw_posts rp ON pp.uri = rp.uri
+                WHERE c.is_active = TRUE 
+                  AND rp.created_at >= NOW() - INTERVAL '10 minutes'
+                GROUP BY c.id, c.label, c.summary
+                ORDER BY display_time DESC
+                LIMIT 10
+            """))
+
+            # 3. Last 24 Hours
+            result_24h = conn.execute(text("""
+                SELECT c.id, c.label, COUNT(rp.uri) as post_count, MAX(rp.created_at) as display_time, c.summary,
+                       (SELECT json_agg(t) FROM (
+                           SELECT rp2.content, rp2.uri, rp2.author_did
+                           FROM processed_posts pp2 
+                           JOIN raw_posts rp2 ON pp2.uri = rp2.uri 
+                           WHERE pp2.topic_id = c.id 
+                           ORDER BY rp2.created_at DESC 
+                           LIMIT 3
+                       ) t) as recent_posts,
+                       (
+                           SELECT json_agg(EXTRACT(EPOCH FROM created_at)) 
+                           FROM raw_posts rp3 
+                           JOIN processed_posts pp3 ON rp3.uri = pp3.uri 
+                           WHERE pp3.topic_id = c.id AND rp3.created_at >= NOW() - INTERVAL '24 hours'
+                       ) as sparkline,
+                       (SELECT row_to_json(r) FROM (SELECT rating_score, sentiment, reasoning FROM topic_ratings WHERE cluster_id = c.id ORDER BY rated_at DESC LIMIT 1) r) as rating
+                FROM clusters c
+                JOIN processed_posts pp ON c.id = pp.topic_id
+                JOIN raw_posts rp ON pp.uri = rp.uri
+                WHERE c.is_active = TRUE 
+                  AND rp.created_at >= NOW() - INTERVAL '24 hours'
+                GROUP BY c.id, c.label, c.summary
+                ORDER BY post_count DESC
+                LIMIT 10
+            """))
+
+            # 4. Last 7 Days
+            result_7d = conn.execute(text("""
+                SELECT c.id, c.label, COUNT(rp.uri) as post_count, MAX(rp.created_at) as display_time, c.summary,
+                       (SELECT json_agg(t) FROM (
+                           SELECT rp2.content, rp2.uri, rp2.author_did
+                           FROM processed_posts pp2 
+                           JOIN raw_posts rp2 ON pp2.uri = rp2.uri 
+                           WHERE pp2.topic_id = c.id 
+                           ORDER BY rp2.created_at DESC 
+                           LIMIT 3
+                       ) t) as recent_posts,
+                       (
+                           SELECT json_agg(EXTRACT(EPOCH FROM created_at)) 
+                           FROM raw_posts rp3 
+                           JOIN processed_posts pp3 ON rp3.uri = pp3.uri 
+                           WHERE pp3.topic_id = c.id AND rp3.created_at >= NOW() - INTERVAL '7 days'
+                       ) as sparkline,
+                       (SELECT row_to_json(r) FROM (SELECT rating_score, sentiment, reasoning FROM topic_ratings WHERE cluster_id = c.id ORDER BY rated_at DESC LIMIT 1) r) as rating
+                FROM clusters c
+                JOIN processed_posts pp ON c.id = pp.topic_id
+                JOIN raw_posts rp ON pp.uri = rp.uri
+                WHERE c.is_active = TRUE 
+                  AND rp.created_at >= NOW() - INTERVAL '7 days'
+                GROUP BY c.id, c.label, c.summary
+                ORDER BY post_count DESC
+                LIMIT 10
+            """))
+
+            # 5. Sentiment History (River Chart Data)
+            # Fetch history for the top 10 most frequently rated topics in the last 24h
+            result_sentiment = conn.execute(text("""
+                WITH FrequentTopics AS (
+                    SELECT cluster_id 
+                    FROM topic_ratings 
+                    WHERE rated_at >= NOW() - INTERVAL '24 hours'
+                    GROUP BY cluster_id 
+                    ORDER BY COUNT(*) DESC 
+                    LIMIT 10
+                )
+                SELECT tr.cluster_id, c.label, tr.rating_score, tr.rated_at, tr.sentiment
+                FROM topic_ratings tr
+                JOIN clusters c ON tr.cluster_id = c.id
+                WHERE tr.cluster_id IN (SELECT cluster_id FROM FrequentTopics)
+                  AND tr.rated_at >= NOW() - INTERVAL '24 hours'
+                ORDER BY tr.rated_at ASC
+            """))
+
+            # Process Sentiment Data
+            sentiment_data = {}
+            for row in result_sentiment:
+                cid = row[0]
+                if cid not in sentiment_data:
+                    sentiment_data[cid] = {"label": row[1], "data": []}
+                sentiment_data[cid]["data"].append({"t": row[3].isoformat(), "y": row[2]})
+
+            # System Status
+            system_status = {"latest_processed_time": "Now"}
+
+            from datetime import datetime, timedelta, timezone
+            
+            def fill_gaps(timestamps, interval_type):
+                if not timestamps:
+                    return []
+                
+                # Convert to datetime objects
+                points = {}
+                for ts in timestamps:
+                    dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+                    # Bucketize
+                    if interval_type == '1h':
+                        key = dt.replace(second=0, microsecond=0)
+                    elif interval_type == '24h':
+                        key = dt.replace(minute=0, second=0, microsecond=0)
+                    elif interval_type == '7d':
+                        key = dt.replace(hour=0, minute=0, second=0, microsecond=0)
+                    else:
+                        key = dt
+                    
+                    points[key] = points.get(key, 0) + 1
+                
+                now = datetime.now(timezone.utc)
+                filled_data = []
+                
+                if interval_type == '1h':
+                    # Last 60 minutes
+                    start_time = now - timedelta(hours=1)
+                    start_time = start_time.replace(second=0, microsecond=0)
+                    for i in range(61):
+                        t = start_time + timedelta(minutes=i)
+                        val = points.get(t, 0)
                         filled_data.append(val)
                         
                 elif interval_type == '24h':
@@ -46,11 +214,7 @@ async def get_top_clusters():
                     start_time = start_time.replace(minute=0, second=0, microsecond=0)
                     for i in range(25):
                         t = start_time + timedelta(hours=i)
-                        val = 0
-                        for pt_time, pt_count in points.items():
-                            if abs((t - pt_time).total_seconds()) < 1800: # Within 30m window
-                                val = pt_count
-                                break
+                        val = points.get(t, 0)
                         filled_data.append(val)
                         
                 elif interval_type == '7d':
@@ -59,11 +223,7 @@ async def get_top_clusters():
                     start_time = start_time.replace(hour=0, minute=0, second=0, microsecond=0)
                     for i in range(8):
                         t = start_time + timedelta(days=i)
-                        val = 0
-                        for pt_time, pt_count in points.items():
-                            if abs((t - pt_time).total_seconds()) < 43200: # Within 12h window
-                                val = pt_count
-                                break
+                        val = points.get(t, 0)
                         filled_data.append(val)
                         
                 return filled_data
@@ -101,11 +261,12 @@ async def get_top_clusters():
                 "last_hour": format_rows(result_1h.fetchall(), '1h'),
                 "last_24h": format_rows(result_24h.fetchall(), '24h'),
                 "last_7d": format_rows(result_7d.fetchall(), '7d'),
+                "sentiment_history": sentiment_data,
                 "system_status": system_status
             }
     except Exception as e:
         logger.error(f"Error fetching clusters: {e}")
-        return {"last_hour": [], "last_24h": [], "last_7d": []}
+        return {"last_hour": [], "last_24h": [], "last_7d": [], "sentiment_history": {}}
 
 app = FastAPI()
 

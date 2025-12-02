@@ -88,15 +88,15 @@ def rate_batch(clusters):
         cluster_text += f"ID: {c['id']}\nLabel: {c['label']}\nSummary: {c['summary']}\n---\n"
 
     prompt = f"""
-    You are a Financial News Analyst. Rate the following 5 topics based on "Market Impact" & "Virality".
+    You are a Financial News Analyst. Rate the following 5 topics based on their "Market Impact".
     
     TOPICS:
     {cluster_text}
 
     INSTRUCTIONS:
     - Return a JSON object with keys as Cluster IDs.
-    - Each value must have: "score" (0-100), "sentiment" (Bullish/Bearish/Neutral), "reasoning" (Max 10 words).
-    - Be critical. 50 is average. 80+ is major breaking news.
+    - Each value must have: "score" (0-100) representing Market Impact, "sentiment" (Bullish/Bearish/Neutral), "reasoning" (Max 10 words).
+    - Score Criteria: 0-20 = Noise/Irrelevant, 21-50 = Minor Note, 51-79 = Moderate Impact, 80-100 = Major Market Mover.
 
     JSON OUTPUT FORMAT:
     {{
