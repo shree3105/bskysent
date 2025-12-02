@@ -1,4 +1,4 @@
-atproto
+atproto==0.4.5
 psycopg2-binary
 python-dotenv
 sqlalchemy
