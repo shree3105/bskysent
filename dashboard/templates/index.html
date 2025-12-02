@@ -425,92 +425,29 @@
                     name: topic.label,
                     data: topic.data.map(pt => ({
                         x: new Date(pt.t).getTime(),
-                        y: pt.y
-                    }))
-                });
-            });
-
-            const options = {
-                series: series,
-                chart: {
-                    type: 'area',
-                    height: 320,
-                    background: 'transparent',
-                    toolbar: { show: false },
-                    animations: { enabled: false } // Disable animation for performance
-                },
-                colors: ['#34d399', '#60a5fa', '#f472b6', '#fbbf24', '#a78bfa', '#f87171', '#9ca3af', '#fb923c', '#22d3ee', '#e879f9'],
-                dataLabels: { enabled: false },
-                stroke: { curve: 'smooth', width: 2 },
-                fill: {
-                    type: 'gradient',
-                    gradient: {
-                        shadeIntensity: 1,
-                        opacityFrom: 0.7,
-                        opacityTo: 0.2,
-                        stops: [0, 90, 100]
+                        chart.updateSeries(series);
                     }
-                },
-                theme: { mode: 'dark' },
-                xaxis: {
-                    type: 'datetime',
-                    tooltip: { enabled: false },
-                    axisBorder: { show: false },
-                    axisTicks: { show: false }
-                },
-                yaxis: {
-                    min: 0,
-                    max: 100,
-                    tickAmount: 4,
-                    labels: {
-                        style: { colors: '#9ca3af', fontFamily: 'Courier New' }
-                    }
-                },
-                grid: {
-                    borderColor: '#374151',
-                    strokeDashArray: 4,
-                    xaxis: { lines: { show: true } }
-                },
-                legend: {
-                    show: true,
-                    position: 'top',
-                    horizontalAlign: 'left',
-                    fontFamily: 'Courier New',
-                    labels: { colors: '#d1d5db' }
-                },
-                tooltip: {
-                    theme: 'dark',
-                    x: { format: 'dd MMM HH:mm' }
-                }
-            };
-
-            if (!chart) {
-                chart = new ApexCharts(document.querySelector("#sentiment-chart"), options);
-                chart.render();
-            } else {
-                chart.updateSeries(series);
-            }
         }
 
         function updateTooltipPosition(e) {
-            const x = e.clientX + 15;
-            const y = e.clientY + 15;
+                        const x = e.clientX + 15;
+                        const y = e.clientY + 15;
 
-            // Boundary checks
-            const tooltipRect = tooltip.getBoundingClientRect();
-            let finalX = x;
-            let finalY = y;
+                        // Boundary checks
+                        const tooltipRect = tooltip.getBoundingClientRect();
+                        let finalX = x;
+                        let finalY = y;
 
-            if (x + tooltipRect.width > window.innerWidth) {
-                finalX = e.clientX - tooltipRect.width - 15;
-            }
-            if (y + tooltipRect.height > window.innerHeight) {
-                finalY = e.clientY - tooltipRect.height - 15;
-            }
+                        if (x + tooltipRect.width > window.innerWidth) {
+                            finalX = e.clientX - tooltipRect.width - 15;
+                        }
+                        if (y + tooltipRect.height > window.innerHeight) {
+                            finalY = e.clientY - tooltipRect.height - 15;
+                        }
 
-            tooltip.style.left = `${finalX}px`;
-            tooltip.style.top = `${finalY}px`;
-        }
+                        tooltip.style.left = `${finalX}px`;
+                        tooltip.style.top = `${finalY}px`;
+                    }
 
         connect();
     </script>
