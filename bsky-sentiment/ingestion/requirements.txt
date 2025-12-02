@@ -1,0 +1,11 @@
+atproto
+psycopg2-binary
+python-dotenv
+sqlalchemy
+websockets
+openai
+pandas
+numpy
+requests
+fastapi
+uvicorn
