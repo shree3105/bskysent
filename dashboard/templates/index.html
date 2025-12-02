@@ -253,22 +253,6 @@
 
                 // Check for update
                 if (tracker[item.id] !== undefined && tracker[item.id] !== item.count) {
-                    li.classList.add('flash-update');
-                }
-                tracker[item.id] = item.count;
-
-                li.innerHTML = `
-                    <div class="col-span-1 text-gray-500 font-bold text-lg">${index + 1}</div>
-                    <div class="col-span-8">
-                        <div class="font-bold text-white text-sm truncate" title="${item.label}">${item.label}</div>
-                        <div class="text-xs text-gray-500 font-mono mt-1">${item.updated}</div>
-                    </div>
-                    <div class="col-span-3 text-right text-blue-400 font-mono text-lg">${item.count}</div>
-                `;
-
-                const showTooltip = (e) => {
-                    tooltipSummary.textContent = item.summary;
-
                     if (item.recent_posts && item.recent_posts.length > 0) {
                         tooltipPosts.innerHTML = item.recent_posts.map(post => {
                             let content = typeof post === 'string' ? post : post.content;
