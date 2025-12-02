@@ -44,8 +44,8 @@ services:
 
   rating_service:
     build:
-      context: ./bsky-sentiment
-      dockerfile: rating_service/Dockerfile
+      context: ./bsky-sentiment/rating_service
+      dockerfile: Dockerfile
     container_name: rating_service
     restart: always
     environment:
