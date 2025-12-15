@@ -153,7 +153,8 @@
     <!-- Shared Tooltip -->
     <div id="tooltip"
         class="fixed hidden w-96 p-4 bg-gray-900 border border-gray-600 rounded shadow-2xl text-xs text-gray-300 z-[9999] pointer-events-none transition-opacity duration-200">
-        <div class="font-bold text-green-400 mb-2 border-b border-gray-700 pb-1 text-sm break-words" id="tooltip-title">
+        <div class="font-bold text-green-400 mb-2 border-b border-gray-700 pb-1 text-sm break-words whitespace-normal"
+            id="tooltip-title">
         </div>
         <div class="font-bold text-white mb-2 border-b border-gray-700 pb-1">Summary</div>
         <div id="tooltip-summary" class="mb-3"></div>
@@ -527,6 +528,10 @@
             if (y + tooltipRect.height > window.innerHeight) {
                 finalY = e.clientY - tooltipRect.height - 15;
             }
+
+            // Prevent going off-screen (top/left)
+            if (finalX < 0) finalX = 15;
+            if (finalY < 0) finalY = 15;
 
             tooltip.style.left = `${finalX}px`;
             tooltip.style.top = `${finalY}px`;
