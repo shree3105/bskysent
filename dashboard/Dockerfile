@@ -12,7 +12,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy necessary code folders
 # We mount these via volume in compose, but copying ensures the image runs standalone too
 COPY dashboard /app/dashboard
-COPY bsky-sentiment/ingestion/.env /app/bsky-sentiment/ingestion/.env
 
 # Create the same folder structure expected by python imports if needed, 
 # or just ensure PYTHONPATH is set correctly. 

@@ -29,7 +29,7 @@ services:
 
   dashboard:
     build: 
-      context: ./bsky-sentiment
+      context: .
       dockerfile: dashboard/Dockerfile
     restart: always
     ports:
