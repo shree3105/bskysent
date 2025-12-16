@@ -49,8 +49,8 @@ services:
 
   dashboard:
     build: 
-      context: ./bsky-sentiment
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: dashboard/Dockerfile
     restart: always
     depends_on:
       db:
