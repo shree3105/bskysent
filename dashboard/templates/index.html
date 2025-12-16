@@ -273,6 +273,20 @@
 
         function render(container, items, tracker) {
             container.innerHTML = '';
+
+            // Cleanup: Remove IDs from tracker that are not in the current items
+            if (items && items.length > 0) {
+                const currentIds = new Set(items.map(i => i.id));
+                Object.keys(tracker).forEach(id => {
+                    if (!currentIds.has(parseInt(id))) {
+                        delete tracker[id];
+                    }
+                });
+            } else {
+                // If no items, clear tracker completely
+                for (const key in tracker) delete tracker[key];
+            }
+
             if (!items || items.length === 0) {
                 container.innerHTML = '<li class="p-4 text-center text-gray-600 text-sm">No active topics...</li>';
                 return;

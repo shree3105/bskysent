@@ -40,8 +40,20 @@ def _get_top_clusters_sync():
     """Fetch top clusters split by time window (Synchronous)"""
     try:
         with engine.connect() as conn:
+            # Helper for SQL-side aggregation to keep payloads small
+            # We use a CTE or subquery to generate the buckets, then left join the data
+            
             # 1. Last Hour (True Trending Velocity)
             result_1h = conn.execute(text("""
+                WITH sparkline_data AS (
+                    SELECT pp.topic_id,
+                           date_trunc('minute', rp.created_at) as bucket,
+                           COUNT(*) as cnt
+                    FROM processed_posts pp
+                    JOIN raw_posts rp ON pp.uri = rp.uri
+                    WHERE rp.created_at >= NOW() - INTERVAL '1 hour'
+                    GROUP BY 1, 2
+                )
                 SELECT c.id, c.label, COUNT(rp.uri) as post_count, MAX(rp.created_at) as display_time, c.summary,
                        (SELECT json_agg(t) FROM (
                            SELECT rp2.content, rp2.uri, rp2.author_did
@@ -52,10 +64,9 @@ def _get_top_clusters_sync():
                            LIMIT 3
                        ) t) as recent_posts,
                        (
-                           SELECT json_agg(EXTRACT(EPOCH FROM created_at)) 
-                           FROM raw_posts rp3 
-                           JOIN processed_posts pp3 ON rp3.uri = pp3.uri 
-                           WHERE pp3.topic_id = c.id AND rp3.created_at >= NOW() - INTERVAL '1 hour'
+                           SELECT json_agg(json_build_object('t', extract(epoch from bucket), 'y', cnt))
+                           FROM sparkline_data sd
+                           WHERE sd.topic_id = c.id
                        ) as sparkline,
                        (SELECT row_to_json(r) FROM (SELECT rating_score, sentiment, reasoning FROM topic_ratings WHERE cluster_id = c.id ORDER BY rated_at DESC LIMIT 1) r) as rating
                 FROM clusters c
@@ -93,6 +104,15 @@ def _get_top_clusters_sync():
 
             # 3. Last 24 Hours
             result_24h = conn.execute(text("""
+                WITH sparkline_data AS (
+                    SELECT pp.topic_id,
+                           date_trunc('hour', rp.created_at) as bucket,
+                           COUNT(*) as cnt
+                    FROM processed_posts pp
+                    JOIN raw_posts rp ON pp.uri = rp.uri
+                    WHERE rp.created_at >= NOW() - INTERVAL '24 hours'
+                    GROUP BY 1, 2
+                )
                 SELECT c.id, c.label, COUNT(rp.uri) as post_count, MAX(rp.created_at) as display_time, c.summary,
                        (SELECT json_agg(t) FROM (
                            SELECT rp2.content, rp2.uri, rp2.author_did
@@ -103,10 +123,9 @@ def _get_top_clusters_sync():
                            LIMIT 3
                        ) t) as recent_posts,
                        (
-                           SELECT json_agg(EXTRACT(EPOCH FROM created_at)) 
-                           FROM raw_posts rp3 
-                           JOIN processed_posts pp3 ON rp3.uri = pp3.uri 
-                           WHERE pp3.topic_id = c.id AND rp3.created_at >= NOW() - INTERVAL '24 hours'
+                           SELECT json_agg(json_build_object('t', extract(epoch from bucket), 'y', cnt))
+                           FROM sparkline_data sd
+                           WHERE sd.topic_id = c.id
                        ) as sparkline,
                        (SELECT row_to_json(r) FROM (SELECT rating_score, sentiment, reasoning FROM topic_ratings WHERE cluster_id = c.id ORDER BY rated_at DESC LIMIT 1) r) as rating
                 FROM clusters c
@@ -121,6 +140,15 @@ def _get_top_clusters_sync():
 
             # 4. Last 7 Days
             result_7d = conn.execute(text("""
+                WITH sparkline_data AS (
+                    SELECT pp.topic_id,
+                           date_trunc('day', rp.created_at) as bucket,
+                           COUNT(*) as cnt
+                    FROM processed_posts pp
+                    JOIN raw_posts rp ON pp.uri = rp.uri
+                    WHERE rp.created_at >= NOW() - INTERVAL '7 days'
+                    GROUP BY 1, 2
+                )
                 SELECT c.id, c.label, COUNT(rp.uri) as post_count, MAX(rp.created_at) as display_time, c.summary,
                        (SELECT json_agg(t) FROM (
                            SELECT rp2.content, rp2.uri, rp2.author_did
@@ -131,10 +159,9 @@ def _get_top_clusters_sync():
                            LIMIT 3
                        ) t) as recent_posts,
                        (
-                           SELECT json_agg(EXTRACT(EPOCH FROM created_at)) 
-                           FROM raw_posts rp3 
-                           JOIN processed_posts pp3 ON rp3.uri = pp3.uri 
-                           WHERE pp3.topic_id = c.id AND rp3.created_at >= NOW() - INTERVAL '7 days'
+                           SELECT json_agg(json_build_object('t', extract(epoch from bucket), 'y', cnt))
+                           FROM sparkline_data sd
+                           WHERE sd.topic_id = c.id
                        ) as sparkline,
                        (SELECT row_to_json(r) FROM (SELECT rating_score, sentiment, reasoning FROM topic_ratings WHERE cluster_id = c.id ORDER BY rated_at DESC LIMIT 1) r) as rating
                 FROM clusters c
@@ -224,54 +251,48 @@ def _get_top_clusters_sync():
 
             from datetime import datetime, timedelta, timezone
             
-            def fill_gaps(timestamps, interval_type):
-                if not timestamps:
+            def fill_gaps(sparkline_data, interval_type):
+                # sparkline_data is now a list of dicts: [{'t': epoch, 'y': count}, ...]
+                if not sparkline_data:
                     return []
                 
-                # Convert to datetime objects
-                points = {}
-                for ts in timestamps:
-                    dt = datetime.fromtimestamp(ts, tz=timezone.utc)
-                    # Bucketize
-                    if interval_type == '1h':
-                        key = dt.replace(second=0, microsecond=0)
-                    elif interval_type == '24h':
-                        key = dt.replace(minute=0, second=0, microsecond=0)
-                    elif interval_type == '7d':
-                        key = dt.replace(hour=0, minute=0, second=0, microsecond=0)
-                    else:
-                        key = dt
-                    
-                    points[key] = points.get(key, 0) + 1
+                # Convert to dict for easy lookup: timestamp -> count
+                points = {int(p['t']): p['y'] for p in sparkline_data}
                 
                 now = datetime.now(timezone.utc)
                 filled_data = []
                 
                 if interval_type == '1h':
-                    # Last 60 minutes
+                    # Last 60 minutes, bucket per minute
                     start_time = now - timedelta(hours=1)
                     start_time = start_time.replace(second=0, microsecond=0)
                     for i in range(61):
                         t = start_time + timedelta(minutes=i)
-                        val = points.get(t, 0)
+                        ts = int(t.timestamp())
+                        # Look for data in the matching minute bubble
+                        # Since local timestamping might differ slightly from DB, we just look for exact match
+                        # or closest. But for simplicity and speed, let's map DB buckets to their integer minute.
+                        val = points.get(ts, 0)
                         filled_data.append(val)
                         
                 elif interval_type == '24h':
-                    # Last 24 hours
+                    # Last 24 hours, bucket per hour
                     start_time = now - timedelta(hours=24)
                     start_time = start_time.replace(minute=0, second=0, microsecond=0)
                     for i in range(25):
                         t = start_time + timedelta(hours=i)
-                        val = points.get(t, 0)
+                        ts = int(t.timestamp())
+                        val = points.get(ts, 0)
                         filled_data.append(val)
                         
                 elif interval_type == '7d':
-                    # Last 7 days
+                    # Last 7 days, bucket per day
                     start_time = now - timedelta(days=7)
                     start_time = start_time.replace(hour=0, minute=0, second=0, microsecond=0)
                     for i in range(8):
                         t = start_time + timedelta(days=i)
-                        val = points.get(t, 0)
+                        ts = int(t.timestamp())
+                        val = points.get(ts, 0)
                         filled_data.append(val)
                         
                 return filled_data
@@ -389,7 +410,7 @@ async def broadcast_updates():
             await manager.broadcast(json.dumps(current_data))
             last_data = current_data
             
-        await asyncio.sleep(0.5) # Update every 500ms
+        await asyncio.sleep(1.0) # Update every 1.0s
 
 @app.on_event("startup")
 async def startup_event():
